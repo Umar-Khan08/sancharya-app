@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_constants.dart';
@@ -21,13 +20,12 @@ class ApiAuthService implements IAuthService {
       : _baseUrl = customBaseUrl ?? _determineDefaultBaseUrl(),
         _fallbackService = fallbackService ?? DemoAuthService();
 
+  static const String defaultProductionBackendUrl = 'https://sancharya-backend.onrender.com';
+
   static String _determineDefaultBaseUrl() {
-    try {
-      if (Platform.isAndroid) {
-        return 'http://10.0.2.2:8000';
-      }
-    } catch (_) {}
-    return 'http://127.0.0.1:8000';
+    const override = String.fromEnvironment('BACKEND_URL');
+    if (override.isNotEmpty) return override;
+    return defaultProductionBackendUrl;
   }
 
   @override

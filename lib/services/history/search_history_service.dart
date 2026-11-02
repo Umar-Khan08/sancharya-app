@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/crop_analysis_input.dart';
 import '../../models/crop_analysis_result.dart';
 import '../../models/crop_model.dart';
+import '../../models/agri_resource.dart';
 
 /// Local offline persistence service for Farmer Search & Analysis History.
 ///
@@ -189,6 +190,29 @@ class SearchHistoryService {
       'sourceUrl': bench.sourceUrl,
       'arrivalDate': bench.arrivalDate,
       'userPhone': userPhone,
+      'nearbyResources': res.nearbyResources.map((r) => {
+        'id': r.id,
+        'nameEn': r.nameEn,
+        'nameHi': r.nameHi,
+        'type': r.type.name,
+        'districtEn': r.districtEn,
+        'districtHi': r.districtHi,
+        'distanceKm': r.distanceKm,
+        'capacityMetricTons': r.capacityMetricTons,
+        'availableMetricTons': r.availableMetricTons,
+        'contactPhone': r.contactPhone,
+        'estimatedRatePerMonthPerQuintal': r.estimatedRatePerMonthPerQuintal,
+        'isGovernmentAccredited': r.isGovernmentAccredited,
+        'isSimulatedData': r.isSimulatedData,
+        'isOsmMapped': r.isOsmMapped,
+        'hasLiveAgmarknetPrice': r.hasLiveAgmarknetPrice,
+        'isCapacityVerified': r.isCapacityVerified,
+        'isPhoneVerified': r.isPhoneVerified,
+        'verificationNoticeEn': r.verificationNoticeEn,
+        'verificationNoticeHi': r.verificationNoticeHi,
+        'latitude': r.latitude,
+        'longitude': r.longitude,
+      }).toList(),
     };
   }
 
@@ -287,6 +311,38 @@ class SearchHistoryService {
 
       final timestamp = DateTime.tryParse(json['timestamp']?.toString() ?? '') ?? DateTime.now();
 
+      final rawRes = json['nearbyResources'] as List<dynamic>? ?? [];
+      final nearbyList = rawRes.map((r) {
+        if (r is! Map<String, dynamic>) return null;
+        final type = AgriResourceType.values.firstWhere(
+          (t) => t.name == r['type'],
+          orElse: () => AgriResourceType.coldStorage,
+        );
+        return AgriResource(
+          id: r['id']?.toString() ?? '',
+          nameEn: r['nameEn']?.toString() ?? '',
+          nameHi: r['nameHi']?.toString() ?? (r['nameEn']?.toString() ?? ''),
+          type: type,
+          districtEn: r['districtEn']?.toString() ?? '',
+          districtHi: r['districtHi']?.toString() ?? '',
+          distanceKm: (r['distanceKm'] as num?)?.toDouble() ?? 0.0,
+          capacityMetricTons: (r['capacityMetricTons'] as num?)?.toDouble() ?? 0.0,
+          availableMetricTons: (r['availableMetricTons'] as num?)?.toDouble() ?? 0.0,
+          contactPhone: r['contactPhone']?.toString() ?? '',
+          estimatedRatePerMonthPerQuintal: (r['estimatedRatePerMonthPerQuintal'] as num?)?.toDouble() ?? 0.0,
+          isGovernmentAccredited: r['isGovernmentAccredited'] == true,
+          isSimulatedData: r['isSimulatedData'] == true,
+          isOsmMapped: r['isOsmMapped'] == true,
+          hasLiveAgmarknetPrice: r['hasLiveAgmarknetPrice'] == true,
+          isCapacityVerified: r['isCapacityVerified'] == true,
+          isPhoneVerified: r['isPhoneVerified'] == true,
+          verificationNoticeEn: r['verificationNoticeEn']?.toString(),
+          verificationNoticeHi: r['verificationNoticeHi']?.toString(),
+          latitude: (r['latitude'] as num?)?.toDouble(),
+          longitude: (r['longitude'] as num?)?.toDouble(),
+        );
+      }).whereType<AgriResource>().toList();
+
       return CombinedCropAnalysisResult(
         analysisId: json['analysisId']?.toString() ?? 'ANALYSIS-${timestamp.millisecondsSinceEpoch}',
         timestamp: timestamp,
@@ -294,7 +350,7 @@ class SearchHistoryService {
         spoilageRisk: risk,
         marketBenchmark: bench,
         recommendation: rec,
-        nearbyResources: const [],
+        nearbyResources: nearbyList,
         isSimulatedModel: false,
       );
     } catch (e) {

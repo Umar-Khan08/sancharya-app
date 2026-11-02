@@ -219,7 +219,7 @@ void main() {
       expect(resource.verificationNotice(true), contains('सत्यापित भौतिक स्थान और दूरी'));
     });
 
-    test('Automatic fallback: falls back to LocalMandiService when backend primary is offline', () async {
+    test('Sole source policy: returns Data Not Available when backend primary is offline and CEDA is unavailable without falling back to mandis.json', () async {
       final tomatoCrop = DemoCrops.sampleCrops.firstWhere((c) => c.id == 'tomato');
       final input = CropAnalysisInput(
         crop: tomatoCrop,
@@ -230,24 +230,22 @@ void main() {
         condition: CropCondition.good,
       );
 
-      // Timeout fast on backend to force offline fallback
+      // Force backend timeout / unavailability to ensure no static file fallback occurs
       final service = AgmarknetAgricultureService(
+        backendBaseUrl: 'http://127.0.0.1:19999',
         timeout: const Duration(milliseconds: 1),
       );
 
       final result = await service.analyzeCrop(input);
       final benchmark = result.marketBenchmark;
 
-      // Successfully resolved via LocalMandiService fallback
-      expect(benchmark.hasLiveRecord, true);
+      // Confirms static mandis.json is not used and clear unavailable state is returned
+      expect(benchmark.hasLiveRecord, false);
       expect(benchmark.isLiveMandiData, false);
-      expect(benchmark.isDatasetRecord, true);
-      expect(benchmark.isOfflineLocal, true);
-      expect(benchmark.currentAvgPricePerQuintal, greaterThan(0));
-      expect(benchmark.pricePerKg, benchmark.currentAvgPricePerQuintal / 100.0);
-      expect(benchmark.lastVerifiedDate, isNotEmpty);
-      expect(benchmark.district?.toLowerCase(), 'ludhiana');
-      expect(benchmark.noticeMessage(false), contains('Offline Mandi Dataset Record'));
+      expect(benchmark.currentAvgPricePerQuintal, 0.0);
+      expect(benchmark.predictedFuturePricePerQuintal, 0.0);
+      expect(result.grossCropValue, isNull);
+      expect(benchmark.sourceName ?? '', isNot(contains('mandis.json')));
     });
 
     test('Strict matching in fallback: never invents price for unmatched location/crop', () async {
@@ -307,32 +305,34 @@ void main() {
       expect(histBenchmark.pricePerKg, 21.5);
     });
 
-    test('Backend CSV configuration does not preempt Flutter LocalMandiService fallback', () async {
+    test('Eliminates static mandis.json: API failure cannot cause a price from mandis.json to appear as current or predicted price', () async {
       final tomatoCrop = DemoCrops.sampleCrops.firstWhere((c) => c.id == 'tomato');
       final input = CropAnalysisInput(
         crop: tomatoCrop,
-        location: 'Ludhiana, Punjab',
+        location: 'Chandwad, Nashik, Maharashtra',
         quantity: 10,
         quantityUnit: QuantityUnit.quintal,
         harvestDate: DateTime.now().subtract(const Duration(days: 1)),
         condition: CropCondition.good,
       );
 
-      // Force backend timeout / unavailability to ensure LocalMandiService with assets/data/mandis.json is reached
+      // Force backend timeout / unavailability to ensure no static price substitution (e.g. 1991) occurs
       final service = AgmarknetAgricultureService(
+        backendBaseUrl: 'http://127.0.0.1:19999',
         timeout: const Duration(milliseconds: 1),
       );
 
       final result = await service.analyzeCrop(input);
       final benchmark = result.marketBenchmark;
 
-      // Confirms LocalMandiService was reached and used assets/data/mandis.json
-      expect(benchmark.isOfflineLocal, true);
-      expect(benchmark.isLiveMandiData, false);
-      expect(benchmark.sourceName, contains('assets/data/mandis.json'));
-      expect(benchmark.currentAvgPricePerQuintal, greaterThan(0));
-      expect(benchmark.pricePerKg, benchmark.currentAvgPricePerQuintal / 100.0);
-      expect(benchmark.lastVerifiedDate, isNotEmpty);
+      // Confirms mandis.json price 1991 is never used
+      expect(benchmark.currentAvgPricePerQuintal, 0.0);
+      expect(benchmark.currentAvgPricePerQuintal, isNot(1991.0));
+      expect(benchmark.predictedFuturePricePerQuintal, 0.0);
+      expect(benchmark.predictedFuturePricePerQuintal, isNot(1991.0));
+      expect(benchmark.isDataNotAvailable, true);
+      expect(result.grossCropValue, isNull);
+      expect(benchmark.sourceName ?? '', isNot(contains('mandis.json')));
     });
 
     test('Distinguishes live, database-backed, historical, dataset, and rejected observations', () {
@@ -388,7 +388,7 @@ void main() {
         isDatabaseRecord: false,
         isDatasetRecord: true,
         isHistorical: false,
-        sourceName: 'mandis.json',
+        sourceName: 'Archived Dataset Record',
       );
       expect(local.hasLiveRecord, true);
       expect(local.isDistrictLive, false);

@@ -110,7 +110,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: screens[_currentTabIndex],
+      body: IndexedStack(
+        index: _currentTabIndex,
+        children: screens,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentTabIndex,
         onDestinationSelected: (index) {

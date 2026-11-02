@@ -78,6 +78,8 @@ class MarketPriceBenchmark {
   final String? requestedDistrict;
   final String? noticeMessageEn;
   final String? noticeMessageHi;
+  final String? predictionNoticeEn;
+  final String? predictionNoticeHi;
   final double? distanceKm;
   final String? forecastModelName;
   final double? holdoutMape;
@@ -114,6 +116,8 @@ class MarketPriceBenchmark {
     this.requestedDistrict,
     this.noticeMessageEn,
     this.noticeMessageHi,
+    this.predictionNoticeEn,
+    this.predictionNoticeHi,
     this.distanceKm,
     this.forecastModelName,
     this.holdoutMape,
@@ -157,6 +161,7 @@ class MarketPriceBenchmark {
   bool get isStoredDatabaseObservation => isDatabaseRecord && !isLiveMandiData;
 
   String? noticeMessage(bool isHindi) => isHindi ? noticeMessageHi : noticeMessageEn;
+  String? predictionNotice(bool isHindi) => isHindi ? predictionNoticeHi : predictionNoticeEn;
 
   /// 1 Quintal = 100 Kilograms
   double get pricePerKg => currentAvgPricePerQuintal / 100.0;
@@ -243,7 +248,17 @@ class CombinedCropAnalysisResult {
       final grossPart = grossCropValue != null
           ? ' Estimated gross value for ${input.quantity.toStringAsFixed(0)} ${input.quantityUnit == QuantityUnit.kilogram ? "kg" : "quintals"} is ₹${grossCropValue!.toStringAsFixed(0)} before costs.'
           : '';
-      priceText = 'Current market price is ₹${marketBenchmark.currentAvgPricePerQuintal.toStringAsFixed(0)} per quintal$predPart.$grossPart';
+      if (marketBenchmark.isLiveMandiData) {
+        priceText = 'Current live market price is ₹${marketBenchmark.currentAvgPricePerQuintal.toStringAsFixed(0)} per quintal$predPart.$grossPart';
+      } else {
+        final dateLabel = marketBenchmark.arrivalDate != null && marketBenchmark.arrivalDate!.isNotEmpty
+            ? ' on ${marketBenchmark.arrivalDate}'
+            : '';
+        final mktLabel = marketBenchmark.market != null && marketBenchmark.market!.isNotEmpty
+            ? ' at ${marketBenchmark.market}'
+            : '';
+        priceText = 'Recorded market observation$dateLabel$mktLabel was ₹${marketBenchmark.currentAvgPricePerQuintal.toStringAsFixed(0)} per quintal$predPart.$grossPart';
+      }
     } else if (marketBenchmark.isNetworkError) {
       priceText = 'Unable to fetch price data. Please try again.';
     } else {
@@ -276,7 +291,17 @@ class CombinedCropAnalysisResult {
       final grossPart = grossCropValue != null
           ? ' ${input.quantity.toStringAsFixed(0)} ${input.quantityUnit == QuantityUnit.kilogram ? "किलोग्राम" : "क्विंटल"} का अनुमानित सकल मूल्य लगभग ₹${grossCropValue!.toStringAsFixed(0)} है।'
           : '';
-      priceText = 'वर्तमान मंडी भाव लगभग ₹${marketBenchmark.currentAvgPricePerQuintal.toStringAsFixed(0)} प्रति क्विंटल है$predPart।$grossPart';
+      if (marketBenchmark.isLiveMandiData) {
+        priceText = 'वर्तमान लाइव मंडी भाव लगभग ₹${marketBenchmark.currentAvgPricePerQuintal.toStringAsFixed(0)} प्रति क्विंटल है$predPart।$grossPart';
+      } else {
+        final dateLabel = marketBenchmark.arrivalDate != null && marketBenchmark.arrivalDate!.isNotEmpty
+            ? ' (${marketBenchmark.arrivalDate})'
+            : '';
+        final mktLabel = marketBenchmark.market != null && marketBenchmark.market!.isNotEmpty
+            ? ' ${marketBenchmark.market} पर'
+            : '';
+        priceText = 'दर्ज पिछला मंडी रिकॉर्ड$dateLabel$mktLabel लगभग ₹${marketBenchmark.currentAvgPricePerQuintal.toStringAsFixed(0)} प्रति क्विंटल था$predPart।$grossPart';
+      }
     } else if (marketBenchmark.isNetworkError) {
       priceText = 'मंडी भाव प्राप्त करने में असमर्थ। कृपया पुनः प्रयास करें।';
     } else {

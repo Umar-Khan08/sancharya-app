@@ -1,4 +1,5 @@
 import '../../services/phone/phone_call_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
@@ -31,6 +32,9 @@ class _ColdStorageScreenState extends State<ColdStorageScreen> {
   AgriResourceType? _selectedFilter = AgriResourceType.coldStorage;
   List<AgriResource> _resources = [];
   bool _isLoading = true;
+  bool _hasError = false;
+  String? _errorMessage;
+  int _requestEpoch = 0;
   double _currentRadiusKm = 50.0;
   String? _lastQueriedLocation;
 
@@ -55,9 +59,12 @@ class _ColdStorageScreenState extends State<ColdStorageScreen> {
   Future<void> _fetchResourcesForActiveLocation({double? overrideRadius}) async {
     final locProvider = context.read<AppLocationProvider>();
     final radius = overrideRadius ?? _currentRadiusKm;
+    final currentEpoch = ++_requestEpoch;
 
     setState(() {
       _isLoading = true;
+      _hasError = false;
+      _errorMessage = null;
       _currentRadiusKm = radius;
       _lastQueriedLocation = locProvider.formattedLocation;
     });
@@ -71,19 +78,20 @@ class _ColdStorageScreenState extends State<ColdStorageScreen> {
         district: locProvider.district,
       );
 
-      if (mounted) {
-        setState(() {
-          _resources = list;
-          _isLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _resources = [];
-          _isLoading = false;
-        });
-      }
+      if (!mounted || currentEpoch != _requestEpoch) return;
+      setState(() {
+        _resources = list;
+        _isLoading = false;
+        _hasError = false;
+      });
+    } catch (e) {
+      if (!mounted || currentEpoch != _requestEpoch) return;
+      setState(() {
+        _resources = [];
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -172,9 +180,11 @@ class _ColdStorageScreenState extends State<ColdStorageScreen> {
                       ? 'निकटतम कोल्ड स्टोरेज एवं मंडियों की खोज जारी है...'
                       : 'Searching nearby mapped facilities (${_currentRadiusKm.toInt()} km radius)...',
                 )
-              : _resources.isEmpty
-                  ? _buildNotFoundView(locProvider, isHindi)
-                  : _buildFacilityList(locProvider, isHindi),
+              : _hasError
+                  ? _buildErrorView(isHindi)
+                  : _resources.isEmpty
+                      ? _buildNotFoundView(locProvider, isHindi)
+                      : _buildFacilityList(locProvider, isHindi),
         ),
       ],
     );
@@ -606,6 +616,81 @@ class _ColdStorageScreenState extends State<ColdStorageScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildErrorView(bool isHindi) {
+    return SingleChildScrollView(
+      physics: const ClampingScrollPhysics(),
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          AppCard(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.riskHighBg.withAlpha(40),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.error_outline_rounded,
+                    size: 36,
+                    color: AppColors.riskHigh,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  isHindi
+                      ? 'सुविधाएं लोड करने में असमर्थ'
+                      : 'Unable to Load Nearby Facilities',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isHindi
+                      ? 'नेटवर्क समस्या के कारण नजदीकी शीतगृह व मंडियों की खोज पूरी नहीं हो सकी। कृपया अपना इंटरनेट कनेक्शन जांचें और पुनः प्रयास करें।'
+                      : (_errorMessage != null && kDebugMode
+                          ? 'Unable to discover nearby facilities: $_errorMessage'
+                          : 'Unable to discover nearby facilities due to network connectivity. Please verify your connection and retry.'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
+                      isHindi ? 'पुनः प्रयास करें' : 'Retry Search',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryGreen,
+                      foregroundColor: AppColors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => _fetchResourcesForActiveLocation(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

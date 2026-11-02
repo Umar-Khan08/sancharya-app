@@ -68,7 +68,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/data/mandis.json
     - assets/data/ngos.json
 
   # An image asset can refer to one or more resolution-specific "variants", see

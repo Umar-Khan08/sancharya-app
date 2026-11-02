@@ -10,8 +10,11 @@ import '../../models/agri_resource.dart';
 import '../../models/crop_analysis_input.dart';
 import '../../models/crop_analysis_result.dart';
 import '../../services/voice/tts_service.dart';
+import '../../services/resources/demo_resource_service.dart';
+import '../../services/location/location_service.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/risk_level_badge.dart';
 import '../../widgets/section_header.dart';
 
@@ -29,6 +32,10 @@ class CropResultsScreen extends StatefulWidget {
 
 class _CropResultsScreenState extends State<CropResultsScreen> {
   late final TtsService _ttsService;
+  late List<AgriResource> _nearbyResources;
+  bool _isLoadingResources = false;
+  String? _resourceError;
+  int _resourceRequestEpoch = 0;
 
   @override
   void initState() {
@@ -37,6 +44,59 @@ class _CropResultsScreenState extends State<CropResultsScreen> {
     _ttsService.addListener(() {
       if (mounted) setState(() {});
     });
+
+    _nearbyResources = List<AgriResource>.from(widget.result.nearbyResources);
+    if (_nearbyResources.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadNearbyResources();
+      });
+    }
+  }
+
+  Future<void> _loadNearbyResources() async {
+    final currentEpoch = ++_resourceRequestEpoch;
+    setState(() {
+      _isLoadingResources = true;
+      _resourceError = null;
+    });
+
+    try {
+      final input = widget.result.input;
+      double? lat = input.latitude;
+      double? lon = input.longitude;
+      String district = widget.result.marketBenchmark.district ??
+          (input.location.isNotEmpty ? input.location.split(',').first.trim() : '');
+
+      if (lat == null || lon == null || (lat == 0.0 && lon == 0.0)) {
+        final locService = LocationService();
+        final resolved = await locService.resolveCoordinatesForLocation(input.location);
+        if (resolved != null) {
+          lat = resolved.latitude;
+          lon = resolved.longitude;
+        }
+      }
+
+      final service = DemoResourceService();
+      final list = await service.getNearbyResources(
+        maxDistanceKm: 50.0,
+        latitude: lat,
+        longitude: lon,
+        district: district,
+      );
+
+      if (!mounted || currentEpoch != _resourceRequestEpoch) return;
+      setState(() {
+        _nearbyResources = list;
+        _isLoadingResources = false;
+        _resourceError = null;
+      });
+    } catch (e) {
+      if (!mounted || currentEpoch != _resourceRequestEpoch) return;
+      setState(() {
+        _isLoadingResources = false;
+        _resourceError = e.toString();
+      });
+    }
   }
 
   @override
@@ -488,11 +548,17 @@ class _CropResultsScreenState extends State<CropResultsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      loc.currentMarketPrice,
+                                      benchmark.isLiveMandiData
+                                          ? loc.currentMarketPrice
+                                          : (benchmark.arrivalDate != null && benchmark.arrivalDate!.isNotEmpty
+                                              ? (isHindi
+                                                  ? 'दर्ज मंडी भाव (${benchmark.arrivalDate})'
+                                                  : 'Recorded Rate (${benchmark.arrivalDate})')
+                                              : (isHindi ? 'संदर्भ मंडी भाव' : 'Benchmark Mandi Rate')),
                                       style: const TextStyle(
                                         color: AppColors.textSecondary,
                                         fontSize: 12,
-                                        fontWeight: FontWeight.w500,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -564,13 +630,14 @@ class _CropResultsScreenState extends State<CropResultsScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        (benchmark.noticeMessage(isHindi) != null &&
-                                                (benchmark.noticeMessage(isHindi)!.toLowerCase().contains('prediction') ||
-                                                    benchmark.noticeMessage(isHindi)!.contains('पूर्वानुमान')))
-                                            ? benchmark.noticeMessage(isHindi)!
-                                            : (isHindi
-                                                ? 'पर्याप्त ऐतिहासिक मूल्य डेटा उपलब्ध नहीं होने के कारण पूर्वानुमान उपलब्ध नहीं है।'
-                                                : 'Prediction unavailable because sufficient historical price data is not available.'),
+                                        benchmark.predictionNotice(isHindi) ??
+                                            ((benchmark.noticeMessage(isHindi) != null &&
+                                                    (benchmark.noticeMessage(isHindi)!.toLowerCase().contains('prediction') ||
+                                                        benchmark.noticeMessage(isHindi)!.contains('पूर्वानुमान')))
+                                                ? benchmark.noticeMessage(isHindi)!
+                                                : (isHindi
+                                                    ? 'पर्याप्त ऐतिहासिक मूल्य डेटा उपलब्ध नहीं होने के कारण पूर्वानुमान उपलब्ध नहीं है।'
+                                                    : 'Prediction unavailable because sufficient historical price data is not available.')),
                                         textAlign: TextAlign.end,
                                         style: const TextStyle(
                                           color: AppColors.textSecondary,
@@ -1055,8 +1122,59 @@ class _CropResultsScreenState extends State<CropResultsScreen> {
                 icon: Icons.warehouse_rounded,
               ),
               const SizedBox(height: 8),
-              if (result.nearbyResources.isNotEmpty) ...[
-                ...result.nearbyResources.map((res) {
+              if (_isLoadingResources) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  child: LoadingIndicator(
+                    message: isHindi
+                        ? 'नजदीकी कोल्ड स्टोरेज एवं मंडियों की खोज जारी है...'
+                        : 'Discovering nearby cold storage & mandi facilities...',
+                  ),
+                ),
+              ] else if (_resourceError != null) ...[
+                AppCard(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, color: AppColors.riskHigh, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              isHindi
+                                  ? 'नजदीकी संसाधन लोड करने में त्रुटि'
+                                  : 'Unable to Load Nearby Facilities',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        isHindi
+                            ? 'नेटवर्क समस्या के कारण नजदीकी सुविधाएं लोड नहीं हो सकीं। कृपया पुनः प्रयास करें।'
+                            : 'Failed to discover nearby facilities due to network connectivity. Please retry.',
+                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.35),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: Text(
+                          isHindi ? 'पुनः प्रयास करें' : 'Retry Search',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: _loadNearbyResources,
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (_nearbyResources.isNotEmpty) ...[
+                ..._nearbyResources.map((res) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10.0),
                     child: AppCard(
